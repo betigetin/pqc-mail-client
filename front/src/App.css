@@ -1,0 +1,35 @@
+/* App-level layout helpers (keeps a centered canvas) */
+#root, .app-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: none;
+}
+
+/* center the main area when used */
+.main-wrap {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+
+/* default card padding for older components */
+.card {
+  padding: 1.25rem;
+}
+
+/* subtle docs link */
+.read-the-docs {
+  color: #94A3B8;
+}
+
+/* small animated logo kept, but tuned for theme */
+@keyframes logo-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.logo.spin {
+  animation: logo-spin infinite 20s linear;
+}
+

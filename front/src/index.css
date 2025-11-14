@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme variables (dark-first). We'll use the 'dark' class on <html> */
+:root {
+  --color-bg: #0F172A;
+  --color-surface: #1E293B;
+  --color-primary: #3B82F6;
+  --color-primary-dark: #1E40AF;
+  --color-accent: #22D3EE;
+  --color-text: #F8FAFC;
+  --color-muted: #94A3B8;
+}
+
+/* Light theme variant (optional) */
+:root.light {
+  --color-bg: #F8FAFC;
+  --color-surface: #ffffff;
+  --color-text: #0F172A;
+  --color-muted: #475569;
+  --color-primary: #1E40AF;
+  --color-accent: #06B6D4;
+}
+
+/* Global base styles */
+html, body, #root {
+  height: 100%;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.4;
+  margin: 0;
+  padding: 0;
+}
+
+/* App container */
+.app-container {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 1.25rem;
+}
+
+/* Card */
+.card {
+  @apply rounded-xl;
+  background-color: var(--color-surface);
+  box-shadow: var(--tw-ring-offset-shadow, 0 8px 30px rgba(2,6,23,0.6));
+  padding: 1.25rem;
+  border-radius: 1rem;
+}
+
+/* Primary button */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all;
+  background-color: var(--color-primary);
+  color: white;
+  box-shadow: 0 6px 18px rgba(30,64,175,0.16);      /* subtle dark-blue shadow */
+  border: 1px solid rgba(30,64,175,0.18);
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(30,64,175,0.20);
+  background-color: var(--color-primary-dark);     /* #1E40AF on hover */
+}
+
+/* Secondary / ghost button */
+.btn-ghost {
+  @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg font-medium;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* Input styles */
+.input {
+  @apply w-full rounded-lg px-3 py-2 outline-none border;
+  background-color: rgba(255,255,255,0.02);
+  border-color: rgba(255,255,255,0.04);
+  color: var(--color-text);
+}
+.input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(34,211,238,0.06);
+}
+
+/* Navbar */
+.app-navbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-radius: 0.75rem;
+}
+
+/* Logo hover glow */
+.logo {
+  height: 48px;
+  width: auto;
+}
+.logo:hover {
+  filter: drop-shadow(0 10px 40px rgba(34,211,238,0.12));
+}
+
+/* Message card in inbox */
+.message-card {
+  background-color: transparent;
+  border-left: 4px solid rgba(255,255,255,0.03);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+}
+.message-card .subject {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.message-card .meta {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+/* small helper */
+.text-muted {
+  color: var(--color-muted);
+}
+
+.nav-link {
+  @apply px-3 py-1 text-sm text-muted rounded-md hover:text-white hover:bg-[rgba(255,255,255,0.05)];
+}
+
+/* Navbar spacing & visuals */
+.app-navbar {
+  padding: 0.75rem 1rem;
+  background: linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
+  border-radius: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+/* Brand */
+.brand-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+/* Nav links group */
+.nav-links {
+  margin-left: 0.25rem;
+}
+
+/* Individual nav link */
+.nav-link {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease, transform 100ms ease;
+}
+.nav-link:hover {
+  color: #ffffff;
+  background: rgba(255,255,255,0.03);
+  transform: translateY(-1px);
+}
+
+/* Register button spacing & size */
+.register-btn {
+  padding: 0.45rem 0.9rem;
+}
+
+/* Logout button */
+.logout-btn {
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.5rem;
+}
+
+/* Device display minor tweaks */
+.device-display {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: 0.25rem;
+}
+
+/* Responsive tweaks */
+@media (max-width: 700px) {
+  .nav-links { gap: 0.5rem; }
+  .brand-name { font-size: 1rem; }
+  .nav-link { padding: 0.38rem 0.5rem; font-size: 0.9rem; }
+  .register-btn { padding: 0.35rem 0.6rem; font-size: 0.9rem; }
+}
+
+/* ---------- Navbar layout & spacing ---------- */
+.app-navbar {
+  padding: 0.6rem 1rem;
+  margin: 0.5rem 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
+  border-radius: 0.75rem;
+}
+
+/* Brand */
+.brand-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+/* Center nav links container (keeps tabs centered) */
+.center-section {
+  /* nothing required; flex-1 + justify-center on parent handles centering */
+}
+
+/* Nav link styles */
+.nav-link {
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease, transform 100ms ease;
+}
+.nav-link:hover {
+  color: #ffffff;
+  background: rgba(255,255,255,0.03);
+  transform: translateY(-1px);
+}
+
+/* Buttons on right */
+.register-btn {
+  padding: 0.42rem 0.85rem;
+}
+.logout-btn {
+  padding: 0.36rem 0.7rem;
+  border-radius: 0.5rem;
+}
+
+/* Device display tweaks */
+.device-display {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Responsive behavior */
+@media (max-width: 880px) {
+  .nav-links { gap: 0.5rem; }
+  .brand-name { font-size: 1rem; }
+  .nav-link { padding: 0.35rem 0.6rem; font-size: 0.9rem; }
+  .register-btn { padding: 0.32rem 0.6rem; font-size: 0.9rem; }
+  .device-display { display: none; } /* hide device on narrow screens to keep layout tidy */
+}
+
+/* Extra: ensure the left and right sections don't overlap the centered area */
+.left-section, .right-section {
+  min-width: 0; /* allow shrinking if necessary */
+  z-index: 2;
+}
+.center-section {
+  z-index: 1;
+  pointer-events: none; /* make the empty space not capture clicks */
+}
+.nav-links { pointer-events: auto; } /* but allow clicks on links */
+
