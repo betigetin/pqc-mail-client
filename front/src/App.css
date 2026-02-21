@@ -1,35 +1,58 @@
-/* App-level layout helpers (keeps a centered canvas) */
-#root, .app-root {
+/* Base resets for the Latticemail dark theme */
+:root {
+  --color-bg: #0a0a0a;
+  --color-surface: #121212;
+  --color-text: #f8fafc;
+  --color-muted: #94a3b8;
+  --color-accent: #22d3ee; /* Cyan */
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  margin: 0;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+/* Ensure the root takes up the whole screen without scrollbars if empty */
+#root {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: none;
 }
 
-/* center the main area when used */
-.main-wrap {
-  width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem 1.25rem;
-}
-
-/* default card padding for older components */
+/* The card is our primary content container */
 .card {
-  padding: 1.25rem;
+  background: var(--color-surface);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* subtle docs link */
-.read-the-docs {
-  color: #94A3B8;
+/* Input styling to fix the 'disturbed' look globally */
+.input {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.5rem;
+  color: white;
+  transition: all 0.2s ease;
+  outline: none;
 }
 
-/* small animated logo kept, but tuned for theme */
-@keyframes logo-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-.logo.spin {
-  animation: logo-spin infinite 20s linear;
+.input:focus {
+  border-color: var(--color-accent) !important;
+  background: rgba(34, 211, 238, 0.05) !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2);
 }
 
+/* Button glow effect */
+.btn-primary {
+  transition: transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(34, 211, 238, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}

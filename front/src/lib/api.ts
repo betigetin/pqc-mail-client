@@ -6,10 +6,6 @@ const API_BASE =
     ? "http://localhost:5000"
     : window.location.origin);
 
-/**
- * jfetch - lightweight wrapper over fetch to send JSON and parse errors nicely.
- * Note: all backend endpoints are under /api on the Flask app.
- */
 async function jfetch<T>(
   path: string,
   opts: RequestInit & { token?: string } = {}
@@ -23,15 +19,9 @@ async function jfetch<T>(
 
   const res = await fetch(`${API_BASE}/api${path}`, { ...opts, headers });
 
-  // If empty/no-content
-  if (res.status === 204) {
-    // @ts-ignore
-    return {} as T;
-  }
+  if (res.status === 204) return {} as T;
 
   const text = await res.text();
-
-  // try parse JSON body if any
   let data: any = null;
   try {
     data = text ? JSON.parse(text) : null;
@@ -40,7 +30,6 @@ async function jfetch<T>(
   }
 
   if (!res.ok) {
-    // prefer server-sent message field
     const msg =
       (data && (data.message || data.error || data.detail)) ||
       (typeof data === "string" ? data : `${res.status} ${res.statusText}`);
@@ -65,6 +54,7 @@ export const api = {
     });
   },
 
+  // device_pubkeys contains X25519, Ed25519, and the large ML-KEM-768 keys
   uploadKeys(device_id: string, device_pubkeys: any, token: string) {
     return jfetch("/keys/upload", {
       method: "POST",
@@ -74,9 +64,14 @@ export const api = {
   },
 
   fetchKeysByHash(email_hash: string) {
-    return jfetch(`/keys/${email_hash}`);
+    return jfetch<{ devices: any[] }>(`/keys/${email_hash}`);
   },
 
+  /**
+   * payload: This is the encrypted ciphertext bundle.
+   * In Latticemail, this contains: 
+   * [Hybrid Ciphertext] + [PQ KEM Ciphertext] + [Classical DH Ciphertext]
+   */
   sendMessage(to_user_hash: string, from_user_hash: string, payload: any, token: string) {
     return jfetch("/messages/send", {
       method: "POST",
@@ -87,12 +82,9 @@ export const api = {
 
   inbox(token: string) {
     return jfetch<{ messages: any[] }>("/messages/inbox", {
-      method: "POST",
+      method: "POST", // Standardized to POST as per your Flask routes
       token,
       body: JSON.stringify({}),
     });
   },
 };
-
-export type Api = typeof api;
-

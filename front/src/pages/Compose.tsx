@@ -9,7 +9,7 @@ import {
   edSign,
   deriveMacKey,
   hmacSha256,
-  deriveHybridSecret, // <--- MAKE SURE THIS IS IMPORTED
+  deriveHybridSecret,
 } from "../lib/crypto";
 import { b64e, b64d, utf8e } from "../lib/b64";
 import { sha256Hex } from "../lib/hash";
@@ -18,15 +18,18 @@ export function Compose() {
   const { token } = useAuth();
   const [toEmail, setToEmail] = useState("bob@example.com");
   const [fromEmail, setFromEmail] = useState("alice@example.com");
-  const [msg, setMsg] = useState("Hello from the web UI!");
+  const [msg, setMsg] = useState("Hello! This message is protected by hybrid post-quantum encryption.");
   const [alg, setAlg] = useState<"ed25519" | "mac">("mac");
 
   const [info, setInfo] = useState<string>("");
   const [sending, setSending] = useState(false);
+  const [cryptoLogs, setCryptoLogs] = useState<string[]>([]);
 
   async function onSend(e: React.FormEvent) {
     e.preventDefault();
     setInfo("");
+    setCryptoLogs(["Initializing Hybrid Handshake..."]);
+    
     if (!token) {
       setInfo("Login required.");
       return;
@@ -37,13 +40,12 @@ export function Compose() {
       return;
     }
 
-    // --- DELETED THE BAD CODE BLOCK THAT WAS HERE ---
-
     setSending(true);
     try {
-      // derive recipient keys
       const toHash = await sha256Hex(toEmail);
       const fromHash = await sha256Hex(fromEmail);
+      
+      setCryptoLogs(prev => [...prev, "Fetching Recipient Public Bundle..."]);
       const toKeys = await api.fetchKeysByHash(toHash);
 
       const preferredDeviceId = "web-01";
@@ -57,69 +59,54 @@ export function Compose() {
         return;
       }
 
-      // --- START HYBRID ENCRYPTION LOGIC ---
-
-      // 1. Classical Shared Secret (X25519)
+      // 1. Classical (X25519)
+      setCryptoLogs(prev => [...prev, "Generating ephemeral X25519 pair..."]);
       const nacl = (await import("tweetnacl")).default;
       const ephPriv = nacl.randomBytes(32);
       const ephPub = nacl.scalarMult.base(ephPriv);
       const recipientX25519 = b64d(dev0.x25519);
       const ss_classic = nacl.scalarMult(ephPriv, recipientX25519);
 
-      // 2. Post-Quantum Shared Secret (Kyber-768)
+      // 2. Post-Quantum (ML-KEM-768)
       if (!dev0.kyber_pub) {
-        throw new Error(
-          "Recipient missing Kyber key. Cannot send PQC message.",
-        );
+        throw new Error("Recipient missing Kyber/ML-KEM key.");
       }
+      setCryptoLogs(prev => [...prev, "Performing ML-KEM-768 Encapsulation..."]);
       const recipientKyberPub = b64d(dev0.kyber_pub);
-
       const sender = new Kyber768();
-      // Encap returns [ciphertext, sharedSecret]
-      const [kyber_ciphertext_raw, ss_pq_raw] =
-        await sender.encap(recipientKyberPub);
+      const [kyber_ciphertext_raw, ss_pq_raw] = await sender.encap(recipientKyberPub);
 
-      const ss_pq = ss_pq_raw;
-      const kyber_ciphertext = kyber_ciphertext_raw;
+      // 3. MIX THEM (Hybrid Secret Derivation)
+      setCryptoLogs(prev => [...prev, "Deriving Hybrid Root Secret via HKDF..."]);
+      const hybridRootKey = deriveHybridSecret(ss_classic, ss_pq_raw);
+      const key = deriveAeadKey(hybridRootKey);
 
-      // 3. MIX THEM (The Hybrid Root Key)
-      const hybridRootKey = deriveHybridSecret(ss_classic, ss_pq);
-      const key = deriveAeadKey(hybridRootKey); // Use this key to encrypt
-
-      // 4. Encrypt Message
+      // 4. Encrypt Message Body
+      setCryptoLogs(prev => [...prev, "Encrypting payload (AES-GCM-SIV)..."]);
       const aad = utf8e("v1");
       const { nonce, ciphertext } = aeadEncrypt(key, utf8e(msg), aad);
 
-      // 5. Sign (Optional)
       let signature: string | undefined;
       let sig_alg = alg;
 
       if (alg === "ed25519") {
-        const bytesToSign = new Uint8Array([
-          ...ephPub,
-          ...nonce,
-          ...ciphertext,
-          ...aad,
-        ]);
-        const sig = edSign(keys.ed25519_priv, bytesToSign);
-        signature = b64e(sig);
+        setCryptoLogs(prev => [...prev, "Applying Ed25519 Digital Signature..."]);
+        const bytesToSign = new Uint8Array([...ephPub, ...nonce, ...ciphertext, ...aad]);
+        signature = b64e(edSign(keys.ed25519_priv, bytesToSign));
       } else if (alg === "mac") {
+        setCryptoLogs(prev => [...prev, "Computing Deniable HMAC-SHA256..."]);
         const macKey = deriveMacKey(hybridRootKey);
-        const mac = await hmacSha256(
-          macKey,
-          new Uint8Array([...ephPub, ...nonce, ...ciphertext, ...aad]),
-        );
+        const mac = await hmacSha256(macKey, new Uint8Array([...ephPub, ...nonce, ...ciphertext, ...aad]));
         signature = b64e(mac);
       }
 
-      // 6. Construct Payload
       const payload = {
         version: "1",
         from_device_id: "web-01",
         sig_alg,
         handshake: {
           ephemeral_x25519_pub: b64e(ephPub),
-          kyber_ciphertext: b64e(kyber_ciphertext), // PQC Payload
+          kyber_ciphertext: b64e(kyber_ciphertext_raw),
         },
         aad: b64e(aad),
         nonce: b64e(nonce),
@@ -127,9 +114,8 @@ export function Compose() {
         ...(signature ? { signature } : {}),
       };
 
-      // --- END HYBRID LOGIC ---
-
       await api.sendMessage(toHash, fromHash, payload, token);
+      setCryptoLogs(prev => [...prev, "Payload (~1.2KB) dispatched to Blind Relay."]);
       setInfo("Message sent successfully!");
       setMsg("");
     } catch (e: any) {
@@ -140,299 +126,79 @@ export function Compose() {
   }
 
   return (
-    <div
-      className="app-container"
-      style={{
-        minHeight: "calc(100vh - 100px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "2rem",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "600px",
-          width: "100%",
-          background: "var(--color-surface)",
-          borderRadius: "1.25rem",
-          padding: "2.5rem",
-          boxShadow:
-            "0 20px 60px rgba(0, 0, 0, 0.4), 0 0 1px rgba(34, 211, 238, 0.1)",
-          border: "1px solid rgba(255, 255, 255, 0.05)",
-        }}
-      >
-        <div style={{ marginBottom: "2rem" }}>
-          <h1
-            style={{
-              fontSize: "1.75rem",
-              fontWeight: "600",
-              marginBottom: "0.5rem",
-              color: "var(--color-text)",
-            }}
-          >
-            Compose Message
-          </h1>
-
-          <p
-            style={{
-              fontSize: "0.95rem",
-              color: "var(--color-muted)",
-              lineHeight: "1.5",
-            }}
-          >
-            Send an end-to-end encrypted message with quantum-safe cryptography
-          </p>
+    <div className="app-container" style={{ minHeight: "90vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
+      <div style={{ maxWidth: "700px", width: "100%", background: "var(--color-surface)", borderRadius: "1.25rem", padding: "2.5rem", border: "1px solid rgba(255, 255, 255, 0.05)", position: "relative", boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}>
+        
+        {/* PQC Status Badge */}
+        <div style={{ position: "absolute", top: "1.5rem", right: "1.5rem", background: "rgba(34, 211, 238, 0.1)", border: "1px solid #22D3EE", color: "#22D3EE", padding: "4px 12px", borderRadius: "100px", fontSize: "0.75rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ width: "8px", height: "8px", background: "#22D3EE", borderRadius: "50%", display: "inline-block" }}></span>
+          HYBRID PQC ENABLED
         </div>
 
-        <form
-          onSubmit={onSend}
-          style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "1rem",
-            }}
-          >
-            <div>
-              <label
-                style={{
-                  fontSize: "0.875rem",
-                  color: "var(--color-muted)",
-                  display: "block",
-                  marginBottom: "0.5rem",
-                  fontWeight: "500",
-                }}
-              >
-                From
-              </label>
-              <input
-                className="input"
-                value={fromEmail}
-                onChange={(e) => setFromEmail(e.target.value)}
-                placeholder="your@email.com"
-                type="email"
-                required
-                style={{
-                  fontSize: "0.9rem",
-                  padding: "0.7rem 0.9rem",
-                }}
-              />
-            </div>
+        <div style={{ marginBottom: "2rem" }}>
+          <h1 style={{ fontSize: "1.75rem", fontWeight: "600", color: "var(--color-text)", marginBottom: '0.5rem' }}>Compose Message</h1>
+          <p style={{ color: "var(--color-muted)", fontSize: "0.9rem" }}>Secure End-to-End Encrypted Tunnel</p>
+        </div>
 
+        <form onSubmit={onSend} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <div>
-              <label
-                style={{
-                  fontSize: "0.875rem",
-                  color: "var(--color-muted)",
-                  display: "block",
-                  marginBottom: "0.5rem",
-                  fontWeight: "500",
-                }}
-              >
-                To
-              </label>
-              <input
-                className="input"
-                value={toEmail}
-                onChange={(e) => setToEmail(e.target.value)}
-                placeholder="recipient@email.com"
-                type="email"
-                required
-                style={{
-                  fontSize: "0.9rem",
-                  padding: "0.7rem 0.9rem",
-                }}
-              />
+              <label style={{ fontSize: "0.8rem", color: "var(--color-muted)", display: 'block', marginBottom: '0.5rem' }}>From</label>
+              <input className="input" value={fromEmail} readOnly style={{ background: "rgba(255,255,255,0.05)", opacity: 0.6, cursor: 'not-allowed' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: "0.8rem", color: "var(--color-muted)", display: 'block', marginBottom: '0.5rem' }}>To</label>
+              <input className="input" value={toEmail} onChange={(e) => setToEmail(e.target.value)} placeholder="recipient@email.com" required />
             </div>
           </div>
 
           <div>
-            <label
-              style={{
-                fontSize: "0.875rem",
-                color: "var(--color-muted)",
-                display: "block",
-                marginBottom: "0.5rem",
-                fontWeight: "500",
-              }}
-            >
-              Message
-            </label>
-            <textarea
-              className="input"
-              value={msg}
-              onChange={(e) => setMsg(e.target.value)}
-              placeholder="Write your encrypted message here..."
-              required
-              style={{
-                width: "100%",
-                minHeight: "160px",
-                fontSize: "0.95rem",
-                padding: "0.85rem 1rem",
-                resize: "vertical",
-                fontFamily: "inherit",
-                lineHeight: "1.6",
-              }}
-            />
+            <label style={{ fontSize: "0.8rem", color: "var(--color-muted)", display: 'block', marginBottom: '0.5rem' }}>Message Body</label>
+            <textarea className="input" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Write your quantum-safe message..." style={{ minHeight: "150px", width: '100%' }} required />
           </div>
 
-          <div
-            style={{
-              padding: "1.25rem",
-              background: "rgba(255, 255, 255, 0.02)",
-              borderRadius: "0.75rem",
-              border: "1px solid rgba(255, 255, 255, 0.05)",
-            }}
-          >
-            <label
-              style={{
-                fontSize: "0.875rem",
-                color: "var(--color-muted)",
-                display: "block",
-                marginBottom: "0.75rem",
-                fontWeight: "500",
-              }}
-            >
-              Signature Algorithm
-            </label>
-
+          {/* Authentication Mode Selection */}
+          <div style={{ padding: "1.25rem", background: "rgba(255, 255, 255, 0.02)", borderRadius: "0.75rem", border: "1px solid rgba(34, 211, 238, 0.1)" }}>
+            <label style={{ fontSize: "0.875rem", color: "var(--color-muted)", display: "block", marginBottom: "0.75rem", fontWeight: "500" }}>Authentication Mode</label>
             <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  cursor: "pointer",
-                  fontSize: "0.9rem",
-                  color: "var(--color-text)",
-                }}
-              >
-                <input
-                  type="radio"
-                  name="alg"
-                  checked={alg === "ed25519"}
-                  onChange={() => setAlg("ed25519")}
-                  style={{ accentColor: "var(--color-accent)" }}
-                />
-                <span>Ed25519 (Signed)</span>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", color: "var(--color-text)" }}>
+                <input type="radio" name="alg" checked={alg === "ed25519"} onChange={() => setAlg("ed25519")} style={{ accentColor: "#22D3EE" }} />
+                <span>Ed25519 (Digital Signature)</span>
               </label>
-
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  cursor: "pointer",
-                  fontSize: "0.9rem",
-                  color: "var(--color-text)",
-                }}
-              >
-                <input
-                  type="radio"
-                  name="alg"
-                  checked={alg === "mac"}
-                  onChange={() => setAlg("mac")}
-                  style={{ accentColor: "var(--color-accent)" }}
-                />
-                <span>MAC (Repudiable)</span>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", color: "var(--color-text)" }}>
+                <input type="radio" name="alg" checked={alg === "mac"} onChange={() => setAlg("mac")} style={{ accentColor: "#22D3EE" }} />
+                <span>HMAC-SHA256 (Deniable Authenticity)</span>
               </label>
             </div>
-
-            <p
-              style={{
-                fontSize: "0.8rem",
-                color: "var(--color-muted)",
-                marginTop: "0.75rem",
-                fontStyle: "italic",
-              }}
-            >
-              Hybrid/Double Ratchet: Active (X25519 + Kyber-768)
-            </p>
+            <div style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <p style={{ fontSize: "0.75rem", color: "#22D3EE", fontWeight: "500" }}>Protocol: X25519 + ML-KEM-768</p>
+              <p style={{ fontSize: "0.75rem", color: "var(--color-muted)" }}>Payload Overhead: ~1,120 B</p>
+            </div>
           </div>
 
-          {info && (
-            <div
-              style={{
-                padding: "0.85rem 1.1rem",
-                background: info.startsWith("Failed")
-                  ? "rgba(239, 68, 68, 0.1)"
-                  : "rgba(34, 211, 238, 0.1)",
-                border: info.startsWith("Failed")
-                  ? "1px solid rgba(239, 68, 68, 0.3)"
-                  : "1px solid rgba(34, 211, 238, 0.3)",
-                borderRadius: "0.5rem",
-                color: info.startsWith("Failed") ? "#fca5a5" : "#22D3EE",
-                fontSize: "0.9rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-              }}
-            >
-              <span>{info.startsWith("Failed") ? "⚠️" : "✓"}</span>
-              <span>{info}</span>
+          {/* Real-time Crypto Audit Logs */}
+          {cryptoLogs.length > 0 && (
+            <div style={{ background: "#000", padding: "1rem", borderRadius: "8px", fontFamily: "monospace", fontSize: "0.75rem", color: "#22D3EE", border: "1px solid rgba(34, 211, 238, 0.2)" }}>
+              <div style={{ marginBottom: "5px", color: "var(--color-muted)", textTransform: "uppercase", fontSize: "0.65rem" }}>Cryptographic Audit Trace:</div>
+              {cryptoLogs.map((log, i) => (
+                <div key={i}> {`> ${log}`}</div>
+              ))}
             </div>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              gap: "1rem",
-              paddingTop: "0.5rem",
-            }}
-          >
-            <button
-              className="btn-primary"
-              type="submit"
-              disabled={sending}
-              style={{
-                flex: 1,
-                padding: "0.85rem",
-                fontSize: "1rem",
-                fontWeight: "600",
-                opacity: sending ? 0.7 : 1,
-                cursor: sending ? "not-allowed" : "pointer",
-              }}
-            >
-              {sending ? "Encrypting & Sending..." : "Send Encrypted Message"}
-            </button>
-
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => {
-                setMsg("");
-                setInfo("");
-              }}
-              disabled={sending}
-              style={{
-                padding: "0.85rem 1.25rem",
-                fontSize: "0.95rem",
-              }}
-            >
-              Clear
+          <div style={{ display: "flex", gap: "1rem" }}>
+            <button className="btn-primary" type="submit" disabled={sending} style={{ flex: 1, padding: "1rem", background: "linear-gradient(135deg, #22D3EE 0%, #3B82F6 100%)", border: "none", color: "#fff", fontWeight: "bold", borderRadius: "8px", cursor: sending ? 'not-allowed' : 'pointer' }}>
+              {sending ? "Encrypting & Dispatched..." : "Encrypt & Send Message"}
             </button>
           </div>
         </form>
 
-        <div
-          style={{
-            marginTop: "1.5rem",
-            paddingTop: "1.5rem",
-            borderTop: "1px solid rgba(255, 255, 255, 0.05)",
-            fontSize: "0.8rem",
-            color: "var(--color-muted)",
-            textAlign: "center",
-            lineHeight: "1.5",
-          }}
-        >
-          Messages are encrypted using Hybrid Post-Quantum Cryptography (X25519
-          + Kyber-768)
-        </div>
+        {info && (
+           <div style={{ marginTop: "1rem", padding: '0.75rem', borderRadius: '8px', background: info.includes("successfully") ? "rgba(34, 211, 238, 0.1)" : "rgba(239, 68, 68, 0.1)", color: info.includes("successfully") ? "#22D3EE" : "#fca5a5", fontSize: "0.85rem", textAlign: "center", border: '1px solid currentColor' }}>
+             {info}
+           </div>
+        )}
       </div>
     </div>
   );
 }
-
