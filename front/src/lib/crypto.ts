@@ -1,30 +1,40 @@
+// front/src/lib/crypto.ts
 import nacl from "tweetnacl";
 import { ChaCha20Poly1305 } from "@stablelib/chacha20poly1305";
 import { HKDF } from "@stablelib/hkdf";
 import { SHA256 } from "@stablelib/sha256";
 import { b64e, b64d, utf8e } from "./b64";
+// FIX: Import ONLY from local file, remove OQS import
+import { Kyber768 } from "./kyber_lib";
 
 export type DeviceKeys = {
   x25519_priv: string; // base64 raw 32 bytes
   x25519_pub: string;  // base64 raw 32 bytes
   ed25519_priv: string;// base64 raw 64 bytes (secret key)
   ed25519_pub: string; // base64 raw 32 bytes
+  kyber_priv: string;  // base64 (Post-Quantum Private Key)
+  kyber_pub: string;   // base64 (Post-Quantum Public Key)
 };
 
 // --- Key generation & storage ---
-export function generateDeviceKeys(): DeviceKeys {
-  // X25519 priv: 32 random bytes; pub = scalarMult.base(priv)
+export async function generateDeviceKeys(): Promise<DeviceKeys> {
+  // 1. Classical X25519 + Ed25519 (Existing code)
   const x_priv = nacl.randomBytes(32);
   const x_pub = nacl.scalarMult.base(x_priv);
-  
-  // Ed25519 sign
   const ed = nacl.sign.keyPair();
+
+  // 2. NEW: Post-Quantum Kyber-768 (Local)
+  const kyber = new Kyber768(); 
+  const [pk, sk] = await kyber.generateKeyPair(); 
   
   return {
     x25519_priv: b64e(x_priv),
     x25519_pub: b64e(x_pub),
     ed25519_priv: b64e(ed.secretKey),
     ed25519_pub: b64e(ed.publicKey),
+    // NEW FIELDS
+    kyber_priv: b64e(sk),
+    kyber_pub: b64e(pk),
   };
 }
 
@@ -44,7 +54,10 @@ export function hkdfSha256(inputKey: Uint8Array, info: Uint8Array, len = 32) {
   return hkdf.expand(len, info);
 }
 
-export function deriveAeadKey(shared: Uint8Array, info = utf8e("stegmail-demo")) {
+export function deriveAeadKey(
+  shared: Uint8Array,
+  info = utf8e("stegmail-demo"),
+) {
   return hkdfSha256(shared, info, 32);
 }
 
@@ -53,14 +66,23 @@ export function deriveMacKey(shared: Uint8Array, info = utf8e("stegmail-mac")) {
 }
 
 // --- AEAD (ChaCha20-Poly1305) ---
-export function aeadEncrypt(key: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array) {
+export function aeadEncrypt(
+  key: Uint8Array,
+  plaintext: Uint8Array,
+  aad?: Uint8Array,
+) {
   const aead = new ChaCha20Poly1305(key);
   const nonce = nacl.randomBytes(12);
   const ct = aead.seal(nonce, plaintext, aad);
   return { nonce, ciphertext: ct };
 }
 
-export function aeadDecrypt(key: Uint8Array, nonce: Uint8Array, ciphertext: Uint8Array, aad?: Uint8Array) {
+export function aeadDecrypt(
+  key: Uint8Array,
+  nonce: Uint8Array,
+  ciphertext: Uint8Array,
+  aad?: Uint8Array,
+) {
   const aead = new ChaCha20Poly1305(key);
   const pt = aead.open(nonce, ciphertext, aad);
   if (!pt) throw new Error("AEAD decrypt failed");
@@ -74,7 +96,7 @@ export async function hmacSha256(key: Uint8Array, data: Uint8Array) {
     key,
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", k, data);
   return new Uint8Array(sig);
@@ -87,7 +109,11 @@ export function edSign(secretKey_b64: string, msg: Uint8Array) {
   return sig;
 }
 
-export function edVerify(publicKey_b64: string, msg: Uint8Array, sig: Uint8Array) {
+export function edVerify(
+  publicKey_b64: string,
+  msg: Uint8Array,
+  sig: Uint8Array,
+) {
   const pk = b64d(publicKey_b64);
   return nacl.sign.detached.verify(msg, sig, pk);
 }
@@ -97,4 +123,18 @@ export function x25519Shared(myPriv_b64: string, theirPub_b64: string) {
   const my = b64d(myPriv_b64);
   const th = b64d(theirPub_b64);
   return nacl.scalarMult(my, th);
+}
+
+// --- Hybrid Derivation ---
+export function deriveHybridSecret(
+  x25519_shared: Uint8Array,
+  kyber_shared: Uint8Array,
+): Uint8Array {
+  // Concatenate: Classical Secret + PQ Secret
+  const combined = new Uint8Array(x25519_shared.length + kyber_shared.length);
+  combined.set(x25519_shared);
+  combined.set(kyber_shared, x25519_shared.length);
+
+  // Hash them together (HKDF)
+  return hkdfSha256(combined, utf8e("Hybrid-Root-Key"));
 }
