@@ -17,7 +17,7 @@ import { sha256Hex } from "../lib/hash";
 export function Compose() {
   const { token } = useAuth();
   const [toEmail, setToEmail] = useState("bob@example.com");
-  const [fromEmail, setFromEmail] = useState("alice@example.com");
+  const [fromEmail, setFromEmail] = useState("alice@latticemail.io");
   const [msg, setMsg] = useState("Hello! This message is protected by hybrid post-quantum encryption.");
   const [alg, setAlg] = useState<"ed25519" | "mac">("mac");
 
@@ -144,7 +144,14 @@ export function Compose() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <div>
               <label style={{ fontSize: "0.8rem", color: "var(--color-muted)", display: 'block', marginBottom: '0.5rem' }}>From</label>
-              <input className="input" value={fromEmail} readOnly style={{ background: "rgba(255,255,255,0.05)", opacity: 0.6, cursor: 'not-allowed' }} />
+              <input 
+    className="input" 
+    value={fromEmail} 
+    onChange={(e) => setFromEmail(e.target.value)} 
+    placeholder="your@email.com"
+    style={{ background: "rgba(255,255,255,0.05)" }} // Removed opacity 0.6 and cursor: not-allowed
+    required 
+  />
             </div>
             <div>
               <label style={{ fontSize: "0.8rem", color: "var(--color-muted)", display: 'block', marginBottom: '0.5rem' }}>To</label>
